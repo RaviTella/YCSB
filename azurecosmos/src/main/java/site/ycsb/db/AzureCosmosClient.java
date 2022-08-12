@@ -48,6 +48,7 @@ import site.ycsb.Status;
 import site.ycsb.StringByteIterator;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -364,18 +365,23 @@ public class AzureCosmosClient extends DB {
         container = AzureCosmosClient.database.getContainer(table);
         AzureCosmosClient.containerCache.put(table, container);
       }
-
       List<SqlParameter> paramList = new ArrayList<>();
       paramList.add(new SqlParameter("@startkey", startkey));
-
-      SqlQuerySpec querySpec = new SqlQuerySpec(
-          this.createSelectTop(fields, recordcount) + " FROM root r WHERE r.id >= @startkey", paramList);
+      SqlQuerySpec querySpec = new SqlQuerySpec(" SELECT * FROM root r WHERE r.id = @startkey", paramList);
+      queryOptions.setPartitionKey(new PartitionKey(startkey));
       CosmosPagedIterable<ObjectNode> pagedIterable = container.queryItems(querySpec, queryOptions, ObjectNode.class);
       Iterator<FeedResponse<ObjectNode>> pageIterator = pagedIterable
           .iterableByPage(AzureCosmosClient.preferredPageSize).iterator();
+      Instant start = Instant.now();
       while (pageIterator.hasNext()) {
         FeedResponse<ObjectNode> feedResponse = pageIterator.next();
         List<ObjectNode> pageDocs = feedResponse.getResults();
+        Instant end = Instant.now();
+
+        if (diagnosticsLatencyThresholdInMS > 0 &&
+            Duration.between(start, end).toMillis() > diagnosticsLatencyThresholdInMS) {
+          LOGGER.warn(QUERY_DIAGNOSTIC, feedResponse.getCosmosDiagnostics().toString());
+        }
         for (ObjectNode doc : pageDocs) {
           Map<String, String> stringResults = new HashMap<>(doc.size());
           Iterator<Map.Entry<String, JsonNode>> nodeIterator = doc.fields();
@@ -387,6 +393,7 @@ public class AzureCosmosClient extends DB {
           StringByteIterator.putAllAsByteIterators(byteResults, stringResults);
           result.add(byteResults);
         }
+        start = Instant.now();
       }
       return Status.OK;
     } catch (CosmosException e) {
