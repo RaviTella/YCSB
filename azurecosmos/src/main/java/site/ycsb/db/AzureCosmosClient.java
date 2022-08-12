@@ -366,8 +366,9 @@ public class AzureCosmosClient extends DB {
         AzureCosmosClient.containerCache.put(table, container);
       }
       List<SqlParameter> paramList = new ArrayList<>();
-      paramList.add(new SqlParameter("@startkey", startkey));
-      SqlQuerySpec querySpec = new SqlQuerySpec(" SELECT * FROM root r WHERE r.id >= @startkey", paramList);
+
+      SqlQuerySpec querySpec = new SqlQuerySpec(
+          this.createSelectTop(fields, recordcount) + " FROM root r WHERE r.id >= @startkey", paramList);
       queryOptions.setPartitionKey(new PartitionKey(startkey));
       CosmosPagedIterable<ObjectNode> pagedIterable = container.queryItems(querySpec, queryOptions, ObjectNode.class);
       Iterator<FeedResponse<ObjectNode>> pageIterator = pagedIterable
